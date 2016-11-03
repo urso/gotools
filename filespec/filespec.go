@@ -16,6 +16,12 @@ type Spec struct {
 	Packages map[string]bool
 }
 
+type FileInfo struct {
+	Package *loader.PackageInfo
+	Path    string
+	File    *ast.File
+}
+
 func New(ctx *build.Context, args []string) (*Spec, error) {
 	files := map[string]map[string]bool{}
 	packages := map[string]bool{}
@@ -120,6 +126,22 @@ func (s *Spec) IterFiles(
 		}
 	}
 	return nil
+}
+
+func (s *Spec) CollectFiles(prog *loader.Program) []FileInfo {
+	fset := prog.Fset
+	var fileInfos []FileInfo
+	s.IterFiles(prog, func(info *loader.PackageInfo, file *ast.File) error {
+		path := fset.File(file.Name.NamePos).Name()
+		fileInfos = append(fileInfos, FileInfo{
+			Package: info,
+			Path:    path,
+			File:    file,
+		})
+
+		return nil
+	})
+	return fileInfos
 }
 
 func createFilter(names []string) func(string) bool {

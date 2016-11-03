@@ -28,7 +28,7 @@ type fileInfo struct {
 }
 
 type correction struct {
-	file   fileInfo
+	file   filespec.FileInfo
 	ident  *ast.Ident
 	should string
 	thing  string
@@ -93,7 +93,7 @@ func doMain() int {
 	for _, s := range strings.Split(*initials, ",") {
 		initialisms[strings.ToUpper(strings.TrimSpace(s))] = true
 	}
-	files := collectFiles(spec, fset, prog)
+	files := spec.CollectFiles(prog)
 	names := analyzeAllNames(fset, files, initialisms)
 
 	// check for exports and reload program + names if necessary
@@ -129,7 +129,7 @@ func doMain() int {
 		}
 
 		// re-analyze renamings symbols from larger corpus
-		files = collectFiles(spec, fset, prog)
+		files = spec.CollectFiles(prog)
 		names = analyzeAllNames(fset, files, initialisms)
 	}
 
@@ -175,7 +175,7 @@ func doMain() int {
 					log.Printf("process %v -> %v\n", c.ident.Name, c.should)
 				}
 
-				objs, err := ana.CollectIdentObjects(prog, c.file.pkg, c.ident)
+				objs, err := ana.CollectIdentObjects(prog, c.file.Package, c.ident)
 				if err != nil {
 					fmt.Println(err)
 					return 1
@@ -245,7 +245,7 @@ func requiresGlobal(names map[string]map[string][]correction) bool {
 
 func analyzeAllNames(
 	fset *token.FileSet,
-	files []fileInfo,
+	files []filespec.FileInfo,
 	initialisms map[string]bool,
 ) map[string]map[string][]correction {
 	pkgs := map[string]map[string][]correction{}
@@ -255,13 +255,13 @@ func analyzeAllNames(
 			continue
 		}
 
-		pkgName := file.pkg.Pkg.Path()
+		pkgName := file.Package.Pkg.Path()
 		M := pkgs[pkgName]
 		if M == nil {
 			M = map[string][]correction{}
 			pkgs[pkgName] = M
 		}
-		M[file.path] = results
+		M[file.Path] = results
 	}
 
 	return pkgs
@@ -269,14 +269,14 @@ func analyzeAllNames(
 
 func analyzeNames(
 	fset *token.FileSet,
-	file fileInfo,
+	file filespec.FileInfo,
 	initialisms map[string]bool,
 ) []correction {
-	path := file.path
+	path := file.Path
 	isTest := strings.HasSuffix(path, "_test.go")
 
 	corrections := []correction{}
-	iterNameDecls(isTest, file.file, func(id *ast.Ident, thing string) {
+	iterNameDecls(isTest, file.File, func(id *ast.Ident, thing string) {
 		name := id.Name
 		should := lintName(name, initialisms)
 		if name != should {
@@ -290,23 +290,4 @@ func analyzeNames(
 		}
 	})
 	return corrections
-}
-
-func collectFiles(
-	spec *filespec.Spec,
-	fset *token.FileSet,
-	prog *loader.Program,
-) []fileInfo {
-	var fileInfos []fileInfo
-	spec.IterFiles(prog, func(info *loader.PackageInfo, file *ast.File) error {
-		path := fset.File(file.Name.NamePos).Name()
-		fileInfos = append(fileInfos, fileInfo{
-			pkg:  info,
-			path: path,
-			file: file,
-		})
-
-		return nil
-	})
-	return fileInfos
 }
