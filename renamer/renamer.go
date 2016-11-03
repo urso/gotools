@@ -1,4 +1,4 @@
-package main
+package renamer
 
 import (
 	"errors"
@@ -12,7 +12,9 @@ import (
 	"golang.org/x/tools/refactor/satisfy"
 )
 
-type renamer struct {
+// renamer extracted from gorename
+
+type Renamer struct {
 	iprog              *loader.Program
 	objsToUpdate       map[types.Object]bool
 	hadConflicts       bool
@@ -27,8 +29,8 @@ var reportError = func(posn token.Position, message string) {
 	fmt.Fprintf(os.Stderr, "%s: %s\n", posn, message)
 }
 
-func newRenamer(prog *loader.Program, to string) *renamer {
-	return &renamer{
+func New(prog *loader.Program, to string) *Renamer {
+	return &Renamer{
 		iprog:        prog,
 		objsToUpdate: map[types.Object]bool{},
 		to:           to,
@@ -36,24 +38,24 @@ func newRenamer(prog *loader.Program, to string) *renamer {
 	}
 }
 
-func (r *renamer) addPackages(pkgs map[string]*loader.PackageInfo) {
+func (r *Renamer) AddPackages(pkgs map[string]*loader.PackageInfo) {
 	for _, info := range pkgs {
-		r.addPackage(info)
+		r.AddPackage(info)
 	}
 }
 
-func (r *renamer) addAllPackages(pkgs ...*loader.PackageInfo) {
+func (r *Renamer) AddAllPackages(pkgs ...*loader.PackageInfo) {
 	for _, info := range pkgs {
-		r.addPackage(info)
+		r.AddPackage(info)
 	}
 }
 
-func (r *renamer) addPackage(info *loader.PackageInfo) {
+func (r *Renamer) AddPackage(info *loader.PackageInfo) {
 	r.packages[info.Pkg] = info
 }
 
 // update checks and updates the input program returning the set of updated files.
-func (r *renamer) update(objs ...types.Object) (map[*token.File]bool, error) {
+func (r *Renamer) Update(objs ...types.Object) (map[*token.File]bool, error) {
 	for _, obj := range objs {
 		if obj, ok := obj.(*types.Func); ok {
 			recv := obj.Type().(*types.Signature).Recv()
@@ -74,7 +76,7 @@ func (r *renamer) update(objs ...types.Object) (map[*token.File]bool, error) {
 	return r.doUpdate(), nil
 }
 
-func (r *renamer) doUpdate() map[*token.File]bool {
+func (r *Renamer) doUpdate() map[*token.File]bool {
 	// We use token.File, not filename, since a file may appear to
 	// belong to multiple packages and be parsed more than once.
 	// token.File captures this distinction; filename does not.

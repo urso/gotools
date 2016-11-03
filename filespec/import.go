@@ -1,4 +1,4 @@
-package main
+package filespec
 
 import (
 	"fmt"
@@ -8,27 +8,21 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strings"
 )
 
 var buildContext = build.Default
 
-var (
-	goroot    = filepath.Clean(runtime.GOROOT())
-	gorootSrc = filepath.Join(goroot, "src")
-)
-
 // importPaths returns the import paths to use for the given command line.
-func importPaths(args ...string) []string {
-	args = importPathsNoDotExpansion(args)
+func importPaths(ctx *build.Context, args ...string) []string {
+	args = importPathsNoDotExpansion(ctx, args)
 	var out []string
 	for _, a := range args {
 		if strings.Contains(a, "...") {
 			if build.IsLocalImport(a) {
-				out = append(out, allPackagesInFS(a)...)
+				out = append(out, allPackagesInFS(ctx, a)...)
 			} else {
-				out = append(out, allPackages(a)...)
+				out = append(out, allPackages(ctx, a)...)
 			}
 			continue
 		}
@@ -39,7 +33,7 @@ func importPaths(args ...string) []string {
 
 // importPathsNoDotExpansion returns the import paths to use for the given
 // command line, but it does no ... expansion.
-func importPathsNoDotExpansion(args []string) []string {
+func importPathsNoDotExpansion(ctx *build.Context, args []string) []string {
 	if len(args) == 0 {
 		return []string{"."}
 	}
@@ -62,7 +56,7 @@ func importPathsNoDotExpansion(args []string) []string {
 			a = path.Clean(a)
 		}
 		if a == "all" || a == "std" {
-			out = append(out, allPackages(a)...)
+			out = append(out, allPackages(ctx, a)...)
 			continue
 		}
 		out = append(out, a)
@@ -74,8 +68,8 @@ func importPathsNoDotExpansion(args []string) []string {
 // under the $GOPATH directories and $GOROOT matching pattern.
 // The pattern is either "all" (all packages), "std" (standard packages)
 // or a path including "...".
-func allPackages(pattern string) []string {
-	pkgs := matchPackages(pattern)
+func allPackages(ctx *build.Context, pattern string) []string {
+	pkgs := matchPackages(ctx, pattern)
 	if len(pkgs) == 0 {
 		fmt.Fprintf(os.Stderr, "warning: %q matched no packages\n", pattern)
 	}
@@ -85,15 +79,15 @@ func allPackages(pattern string) []string {
 // allPackagesInFS is like allPackages but is passed a pattern
 // beginning ./ or ../, meaning it should scan the tree rooted
 // at the given directory.  There are ... in the pattern too.
-func allPackagesInFS(pattern string) []string {
-	pkgs := matchPackagesInFS(pattern)
+func allPackagesInFS(ctx *build.Context, pattern string) []string {
+	pkgs := matchPackagesInFS(ctx, pattern)
 	if len(pkgs) == 0 {
 		fmt.Fprintf(os.Stderr, "warning: %q matched no packages\n", pattern)
 	}
 	return pkgs
 }
 
-func matchPackagesInFS(pattern string) []string {
+func matchPackagesInFS(ctx *build.Context, pattern string) []string {
 	// Find directory to begin the scan.
 	// Could be smarter but this one optimization
 	// is enough for now, since ... is usually at the
@@ -109,7 +103,7 @@ func matchPackagesInFS(pattern string) []string {
 	if strings.HasPrefix(pattern, "./") {
 		prefix = "./"
 	}
-	match := matchPattern(pattern)
+	match := matchPattern(ctx, pattern)
 
 	var pkgs []string
 	filepath.Walk(dir, func(path string, fi os.FileInfo, err error) error {
@@ -155,7 +149,7 @@ func matchPackagesInFS(pattern string) []string {
 // name matches pattern.  Pattern is a limited glob
 // pattern in which '...' means 'any string' and there
 // is no other special syntax.
-func matchPattern(pattern string) func(name string) bool {
+func matchPattern(ctx *build.Context, pattern string) func(name string) bool {
 	re := regexp.QuoteMeta(pattern)
 	re = strings.Replace(re, `\.\.\.`, `.*`, -1)
 	// Special case: foo/... matches foo too.
@@ -167,11 +161,12 @@ func matchPattern(pattern string) func(name string) bool {
 		return reg.MatchString(name)
 	}
 }
-func matchPackages(pattern string) []string {
+
+func matchPackages(ctx *build.Context, pattern string) []string {
 	match := func(string) bool { return true }
 	treeCanMatch := func(string) bool { return true }
 	if pattern != "all" && pattern != "std" {
-		match = matchPattern(pattern)
+		match = matchPattern(ctx, pattern)
 		treeCanMatch = treeCanMatchPattern(pattern)
 	}
 
@@ -184,7 +179,7 @@ func matchPackages(pattern string) []string {
 	var pkgs []string
 
 	// Commands
-	cmd := filepath.Join(goroot, "src/cmd") + string(filepath.Separator)
+	cmd := filepath.Join(ctx.GOROOT, "src/cmd") + string(filepath.Separator)
 	filepath.Walk(cmd, func(path string, fi os.FileInfo, err error) error {
 		if err != nil || !fi.IsDir() || path == cmd {
 			return nil
@@ -218,6 +213,7 @@ func matchPackages(pattern string) []string {
 		return nil
 	})
 
+	gorootSrc := filepath.Join(ctx.GOROOT, "src")
 	for _, src := range buildContext.SrcDirs() {
 		if (pattern == "std" || pattern == "cmd") && src != gorootSrc {
 			continue

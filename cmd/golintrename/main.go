@@ -7,14 +7,16 @@ import (
 	"go/ast"
 	"go/build"
 	"go/format"
-	"go/parser"
 	"go/token"
-	"go/types"
 	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/urso/gotools/ana"
+	"github.com/urso/gotools/filespec"
+	"github.com/urso/gotools/renamer"
 
 	"golang.org/x/tools/go/loader"
 	"golang.org/x/tools/refactor/importgraph"
@@ -76,13 +78,13 @@ func doMain() int {
 
 	fset := token.NewFileSet()
 	ctx := &build.Default
-	spec, err := createLoadSpecs(ctx, args)
+	spec, err := filespec.New(ctx, args)
 	if err != nil {
 		log.Println(err)
 		return 1
 	}
 
-	prog, err := loadProgram(fset, ctx, spec.packages)
+	prog, err := loadProgram(fset, ctx, spec.Packages)
 	if err != nil {
 		log.Println(err)
 		return 1
@@ -115,7 +117,7 @@ func doMain() int {
 
 		// Enumerate the set of potentially affected packages.
 		affectedPackages := map[string]bool{}
-		for pkg := range spec.packages {
+		for pkg := range spec.Packages {
 			for path := range rev.Search(pkg) {
 				affectedPackages[path] = true
 			}
@@ -175,16 +177,16 @@ func doMain() int {
 					log.Printf("process %v -> %v\n", c.ident.Name, c.should)
 				}
 
-				objs, err := objectsFromIdent(prog, c.file.pkg, c.ident)
+				objs, err := ana.CollectIdentObjects(prog, c.file.pkg, c.ident)
 				if err != nil {
 					fmt.Println(err)
 					return 1
 				}
 
-				renamer := newRenamer(prog, c.should)
-				renamer.addAllPackages(packages...)
+				r := renamer.New(prog, c.should)
+				r.AddAllPackages(packages...)
 
-				files, err := renamer.update(objs...)
+				files, err := r.Update(objs...)
 				if err != nil {
 					return 1
 				}
@@ -252,55 +254,6 @@ func makeDiff(cmd string) func(string, []byte) error {
 	}
 }
 
-func objectsFromIdent(prog *loader.Program, info *loader.PackageInfo, id *ast.Ident) ([]types.Object, error) {
-	obj := info.Uses[id]
-	if obj == nil {
-		obj = info.Defs[id]
-		if obj == nil {
-			pos := id.Pos()
-
-			// Ident without Object.
-
-			// Package clause?
-			_, path, _ := prog.PathEnclosingInterval(pos, pos)
-			if len(path) == 2 { // [Ident File]
-				// TODO(adonovan): support this case.
-				return nil, fmt.Errorf("cannot rename %q: renaming package clauses is not yet supported",
-					id)
-			}
-
-			// Implicit y in "switch y := x.(type) {"?
-			if obj := typeSwitchVar(&info.Info, path); obj != nil {
-				return []types.Object{obj}, nil
-			}
-
-			// Probably a type error.
-			return nil, fmt.Errorf("cannot find object for %q", id.Name)
-		}
-	}
-
-	if obj.Pkg() == nil {
-		return nil, fmt.Errorf("cannot rename predeclared identifiers (%s)", obj)
-	}
-	return []types.Object{obj}, nil
-}
-
-func typeSwitchVar(info *types.Info, path []ast.Node) types.Object {
-	if len(path) > 3 {
-		// [Ident AssignStmt TypeSwitchStmt...]
-		if sw, ok := path[2].(*ast.TypeSwitchStmt); ok {
-			// choose the first case.
-			if len(sw.Body.List) > 0 {
-				obj := info.Implicits[sw.Body.List[0].(*ast.CaseClause)]
-				if obj != nil {
-					return obj
-				}
-			}
-		}
-	}
-	return nil
-}
-
 func requiresGlobal(names map[string]map[string][]correction) bool {
 	for _, files := range names {
 		for _, cs := range files {
@@ -363,126 +316,21 @@ func analyzeNames(
 	return corrections
 }
 
-func loadProgram(
+func collectFiles(
+	spec *filespec.Spec,
 	fset *token.FileSet,
-	ctx *build.Context,
-	packages map[string]bool,
-) (*loader.Program, error) {
-	// import all packages
-	conf := &loader.Config{
-		Fset:        fset,
-		Build:       ctx,
-		ParserMode:  parser.ParseComments,
-		AllowErrors: false,
-		TypeCheckFuncBodies: func(path string) bool {
-			return packages[path] || packages[strings.TrimSuffix(path, "_test")]
-		},
-	}
-
-	for pkg := range packages {
-		if verbose {
-			log.Println("load package: ", pkg)
-		}
-		conf.ImportWithTests(pkg)
-	}
-
-	if verbose {
-		log.Println("Do Load and check")
-	}
-	conf.AllowErrors = true
-	return doLoadProgram(conf)
-}
-
-func collectFiles(spec *spec, fset *token.FileSet, prog *loader.Program) []fileInfo {
-	// collect files for all initial imported packages
+	prog *loader.Program,
+) []fileInfo {
 	var fileInfos []fileInfo
-	packages := spec.packages
+	spec.IterFiles(prog, func(info *loader.PackageInfo, file *ast.File) error {
+		path := fset.File(file.Name.NamePos).Name()
+		fileInfos = append(fileInfos, fileInfo{
+			pkg:  info,
+			path: path,
+			file: file,
+		})
 
-	for pkg, info := range prog.AllPackages {
-		name := pkg.Path()
-		if !packages[name] {
-			continue
-		}
-
-		filter := createFilter(spec.files[name])
-		for _, file := range info.Files {
-			path := fset.File(file.Name.NamePos).Name()
-			if !filter(path) {
-				continue
-			}
-
-			fileInfos = append(fileInfos, fileInfo{
-				pkg:  info,
-				path: path,
-				file: file,
-			})
-		}
-	}
-
+		return nil
+	})
 	return fileInfos
-}
-
-func createFilter(names []string) func(string) bool {
-	if len(names) == 0 {
-		return func(_ string) bool {
-			return true
-		}
-	}
-	return func(path string) bool {
-		for _, other := range names {
-			if path == other {
-				return true
-			}
-		}
-		return false
-	}
-}
-
-func doLoadProgram(conf *loader.Config) (*loader.Program, error) {
-	allowErrors := conf.AllowErrors
-	defer func() {
-		conf.AllowErrors = allowErrors
-	}()
-
-	// Ideally we would just return conf.Load() here, but go/types
-	// reports certain "soft" errors that gc does not (Go issue 14596).
-	// As a workaround, we set AllowErrors=true and then duplicate
-	// the loader's error checking but allow soft errors.
-	// It would be nice if the loader API permitted "AllowErrors: soft".
-	conf.AllowErrors = true
-	prog, err := conf.Load()
-	if err != nil {
-		return nil, err
-	}
-
-	var errpkgs []string
-	// Report hard errors in indirectly imported packages.
-	for _, info := range prog.AllPackages {
-		if containsHardErrors(info.Errors) {
-			errpkgs = append(errpkgs, info.Pkg.Path())
-		}
-	}
-
-	if errpkgs != nil {
-		var more string
-		if len(errpkgs) > 3 {
-			more = fmt.Sprintf(" and %d more", len(errpkgs)-3)
-			errpkgs = errpkgs[:3]
-		}
-		err := fmt.Errorf("couldn't load packages due to errors: %s%s",
-			strings.Join(errpkgs, ", "), more)
-		return nil, err
-	}
-
-	return prog, nil
-}
-
-func containsHardErrors(errors []error) bool {
-	for _, err := range errors {
-		if err, ok := err.(types.Error); ok && err.Soft {
-			continue
-		}
-		return true
-	}
-	return false
 }

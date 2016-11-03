@@ -1,8 +1,4 @@
-// Copyright 2014 The Go Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
-
-package main
+package renamer
 
 // This file defines the safety checks for each kind of renaming.
 
@@ -17,13 +13,13 @@ import (
 )
 
 // errorf reports an error (e.g. conflict) and prevents file modification.
-func (r *renamer) errorf(pos token.Pos, format string, args ...interface{}) {
+func (r *Renamer) errorf(pos token.Pos, format string, args ...interface{}) {
 	r.hadConflicts = true
 	reportError(r.iprog.Fset.Position(pos), fmt.Sprintf(format, args...))
 }
 
 // check performs safety checks of the renaming of the 'from' object to r.to.
-func (r *renamer) check(from types.Object) {
+func (r *Renamer) check(from types.Object) {
 	if r.objsToUpdate[from] {
 		return
 	}
@@ -50,7 +46,7 @@ func (r *renamer) check(from types.Object) {
 
 // checkInFileBlock performs safety checks for renames of objects in the file block,
 // i.e. imported package names.
-func (r *renamer) checkInFileBlock(from *types.PkgName) {
+func (r *Renamer) checkInFileBlock(from *types.PkgName) {
 	// Check import name is not "init".
 	if r.to == "init" {
 		r.errorf(from.Pos(), "%q is not a valid imported package name", r.to)
@@ -84,7 +80,7 @@ func (r *renamer) checkInFileBlock(from *types.PkgName) {
 
 // checkInPackageBlock performs safety checks for renames of
 // func/var/const/type objects in the package block.
-func (r *renamer) checkInPackageBlock(from types.Object) {
+func (r *Renamer) checkInPackageBlock(from types.Object) {
 	// Check that there are no references to the name from another
 	// package if the renaming would make it unexported.
 	if ast.IsExported(from.Name()) && !ast.IsExported(r.to) {
@@ -144,7 +140,7 @@ func (r *renamer) checkInPackageBlock(from types.Object) {
 	}
 }
 
-func (r *renamer) checkInLocalScope(from types.Object) {
+func (r *Renamer) checkInLocalScope(from types.Object) {
 	info := r.packages[from.Pkg()]
 
 	// Is this object an implicit local var for a type switch?
@@ -207,7 +203,7 @@ func (r *renamer) checkInLocalScope(from types.Object) {
 // Removing the old name (and all references to it) is always safe, and
 // requires no checks.
 //
-func (r *renamer) checkInLexicalScope(from types.Object, info *loader.PackageInfo) {
+func (r *Renamer) checkInLexicalScope(from types.Object, info *loader.PackageInfo) {
 	b := from.Parent() // the block defining the 'from' object
 	if b != nil {
 		toBlock, to := b.LookupParent(r.to, from.Parent().End())
@@ -395,7 +391,7 @@ func enclosingBlock(info *types.Info, stack []ast.Node) *types.Scope {
 	panic("no Scope for *ast.File")
 }
 
-func (r *renamer) checkLabel(label *types.Label) {
+func (r *Renamer) checkLabel(label *types.Label) {
 	// Check there are no identical labels in the function's label block.
 	// (Label blocks don't nest, so this is easy.)
 	if prev := label.Parent().Lookup(r.to); prev != nil {
@@ -406,7 +402,7 @@ func (r *renamer) checkLabel(label *types.Label) {
 
 // checkStructField checks that the field renaming will not cause
 // conflicts at its declaration, or ambiguity or changes to any selection.
-func (r *renamer) checkStructField(from *types.Var) {
+func (r *Renamer) checkStructField(from *types.Var) {
 	// Check that the struct declaration is free of field conflicts,
 	// and field/method conflicts.
 
@@ -481,7 +477,7 @@ func (r *renamer) checkStructField(from *types.Var) {
 
 // checkSelection checks that all uses and selections that resolve to
 // the specified object would continue to do so after the renaming.
-func (r *renamer) checkSelections(from types.Object) {
+func (r *Renamer) checkSelections(from types.Object) {
 	for pkg, info := range r.packages {
 		if id := someUse(info, from); id != nil {
 			if !r.checkExport(id, pkg, from) {
@@ -542,7 +538,7 @@ func (r *renamer) checkSelections(from types.Object) {
 	}
 }
 
-func (r *renamer) selectionConflict(from types.Object, delta int, syntax *ast.SelectorExpr, obj types.Object) {
+func (r *Renamer) selectionConflict(from types.Object, delta int, syntax *ast.SelectorExpr, obj types.Object) {
 	r.errorf(from.Pos(), "renaming this %s %q to %q",
 		objectKind(from), from.Name(), r.to)
 
@@ -575,7 +571,7 @@ func (r *renamer) selectionConflict(from types.Object, delta int, syntax *ast.Se
 //   change the assignability relation.  For renamings of abstract
 //   methods, we rename all methods transitively coupled to it via
 //   assignability.
-func (r *renamer) checkMethod(from *types.Func) {
+func (r *Renamer) checkMethod(from *types.Func) {
 	// e.g. error.Error
 	if from.Pkg() == nil {
 		r.errorf(from.Pos(), "you cannot rename built-in method %s", from)
@@ -801,7 +797,7 @@ func (r *renamer) checkMethod(from *types.Func) {
 	r.checkSelections(from)
 }
 
-func (r *renamer) checkExport(id *ast.Ident, pkg *types.Package, from types.Object) bool {
+func (r *Renamer) checkExport(id *ast.Ident, pkg *types.Package, from types.Object) bool {
 	// Reject cross-package references if r.to is unexported.
 	// (Such references may be qualified identifiers or field/method
 	// selections.)
@@ -817,7 +813,7 @@ func (r *renamer) checkExport(id *ast.Ident, pkg *types.Package, from types.Obje
 }
 
 // satisfy returns the set of interface satisfaction constraints.
-func (r *renamer) satisfy() map[satisfy.Constraint]bool {
+func (r *Renamer) satisfy() map[satisfy.Constraint]bool {
 	if r.satisfyConstraints == nil {
 		// Compute on demand: it's expensive.
 		var f satisfy.Finder

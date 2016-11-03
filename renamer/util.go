@@ -1,39 +1,10 @@
-package main
+package renamer
 
 import (
-	"fmt"
-	"go/build"
 	"go/types"
-	"os"
-	"path/filepath"
 	"reflect"
 	"strings"
 )
-
-func exists(filename string) bool {
-	_, err := os.Stat(filename)
-	return err == nil
-}
-
-func isDir(filename string) bool {
-	fi, err := os.Stat(filename)
-	return err == nil && fi.IsDir()
-}
-
-func dirPkgName(ctx *build.Context, path string) (string, error) {
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		return "", err
-	}
-
-	GOSRC := ctx.GOPATH + "/src/"
-	if !strings.HasPrefix(abs, GOSRC) {
-		return "", fmt.Errorf("package '%v' no in $GOPATH", path)
-	}
-
-	pkgname := abs[len(GOSRC):]
-	return pkgname, nil
-}
 
 func isPackageLevel(obj types.Object) bool {
 	return obj.Pkg().Scope().Lookup(obj.Name()) == obj
