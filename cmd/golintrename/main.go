@@ -8,15 +8,14 @@ import (
 	"go/build"
 	"go/format"
 	"go/token"
-	"io/ioutil"
 	"log"
 	"os"
-	"os/exec"
 	"strings"
 
 	"github.com/urso/gotools/ana"
 	"github.com/urso/gotools/filespec"
 	"github.com/urso/gotools/renamer"
+	"github.com/urso/gotools/write"
 
 	"golang.org/x/tools/go/loader"
 	"golang.org/x/tools/refactor/importgraph"
@@ -64,11 +63,10 @@ func doMain() int {
 
 	verbose = *verboseLogging
 
-	writeFile := func(filename string, content []byte) error {
-		return ioutil.WriteFile(filename, content, 0644)
-	}
-	if *diff {
-		writeFile = makeDiff(*diffCmd)
+	writer, err := write.CreateWriter(*diff, *diffCmd)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
 	}
 
 	args := flag.Args()
@@ -226,32 +224,10 @@ func doMain() int {
 		if verbose {
 			log.Println("update file: ", file)
 		}
-		writeFile(file, buf)
+		writer.Write(file, buf)
 	}
 
 	return 0
-}
-
-func makeDiff(cmd string) func(string, []byte) error {
-	return func(filename string, content []byte) error {
-		renamed := fmt.Sprintf("%s.%d.renamed", filename, os.Getpid())
-		if err := ioutil.WriteFile(renamed, content, 0644); err != nil {
-			return err
-		}
-		defer os.Remove(renamed)
-
-		diff, err := exec.Command(cmd, "-u", filename, renamed).CombinedOutput()
-		if len(diff) > 0 {
-			// diff exits with a non-zero status when the files don't match.
-			// Ignore that failure as long as we get output.
-			os.Stdout.Write(diff)
-			return nil
-		}
-		if err != nil {
-			return fmt.Errorf("computing diff: %v", err)
-		}
-		return nil
-	}
 }
 
 func requiresGlobal(names map[string]map[string][]correction) bool {
