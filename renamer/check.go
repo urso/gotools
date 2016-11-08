@@ -284,7 +284,7 @@ func lexicalLookup(block *types.Scope, name string, pos token.Pos) (*types.Scope
 		// so ignore pos in that case.
 		// No analogous clause is needed for file-level objects
 		// since no reference can appear before an import decl.
-		if obj != nil && (b == obj.Pkg().Scope() || obj.Pos() < pos) {
+		if obj != nil && obj.Pkg() != nil && (b == obj.Pkg().Scope() || obj.Pos() < pos) {
 			return b, obj
 		}
 	}

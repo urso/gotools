@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"go/ast"
+	"strings"
 
 	"github.com/urso/gotools/ana"
 	"github.com/urso/gotools/filespec"
@@ -30,8 +31,14 @@ func collectFileExports(
 	file filespec.FileInfo,
 ) []exports {
 	var es []exports
+
+	isTest := strings.HasSuffix(file.Path, "_test.go")
+
 	ast.Walk(makeExportsVisitor(func(id *ast.Ident, n ast.Node) {
-		fmt.Println("add ident: ", id.Name)
+		fn, isFunc := n.(*ast.FuncDecl)
+		if isTest && isTestName(id.Name) && isFunc && fn.Recv == nil {
+			return
+		}
 
 		objs, err := ana.CollectIdentObjects(prog, file.Package, id)
 		if err == nil {
@@ -128,7 +135,6 @@ func filterIndirectExports(used, unused []exports) []exports {
 					}
 				}
 				if !isUsed && v.Type.Results != nil {
-					fmt.Println("check results")
 					for _, f := range v.Type.Results.List {
 						if isFieldType(f, t) {
 							isUsed = true
@@ -156,4 +162,13 @@ func filterIndirectExports(used, unused []exports) []exports {
 	}
 
 	return res
+}
+
+func isTestName(t string) bool {
+	for _, prefix := range []string{"Example", "Test", "Benchmark"} {
+		if strings.HasPrefix(t, prefix) {
+			return true
+		}
+	}
+	return false
 }

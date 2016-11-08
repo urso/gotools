@@ -50,6 +50,7 @@ func doMain() (rc int) {
 	diff := flag.Bool("d", false, "Display diff instead of rewriting")
 	diffCmd := flag.String("diff", "diff", "Diff command")
 	lintOnly := flag.Bool("l", false, "Lint mode")
+	ignoreConflicts := flag.Bool("c", false, "ignore conflicts (do not rename)")
 	verboseLogging := flag.Bool("v", false, "verbose")
 
 	flag.Usage = usage
@@ -100,23 +101,6 @@ func doMain() (rc int) {
 	// collect exported symbols
 	files := spec.CollectFiles(prog)
 	allExported := collectExports(prog, files)
-	if verbose {
-		for pkg, exports := range allExported {
-			fmt.Println("package: ", pkg.Pkg.Name())
-
-			for _, e := range exports {
-				id := e.ident
-				pos := fset.Position(id.Pos())
-				name := id.Name
-				switch obj := e.objs[0].(type) {
-				case *types.Func:
-					name = obj.FullName()
-				}
-				fmt.Printf("    %v exported: %v\n", pos, name)
-			}
-		}
-	}
-
 	if len(allExported) == 0 {
 		fmt.Println("no exports found")
 		return
@@ -124,15 +108,28 @@ func doMain() (rc int) {
 
 	// filter out all unused exported symbols
 	unusedExports := map[*loader.PackageInfo][]exports{}
+	if verbose {
+		log.Println("filter exported symbols")
+	}
 	for pkg, es := range allExported {
 		if verbose {
 			log.Println("process package: ", pkg.Pkg.Name())
 		}
 
 		// for every package importing pkg check if any exported symbols are used
+		importers := allImporters(prog, pkg)
+		if len(importers) == 0 {
+			unusedExports[pkg] = es
+			continue
+		}
+
 		used := make([]bool, len(es))
 		count := 0
-		for _, importer := range allImporters(prog, pkg) {
+		for _, importer := range importers {
+			if verbose {
+				fmt.Println("check importer using symbols: ", importer.Pkg.Path())
+			}
+
 			for i, e := range es {
 				if used[i] {
 					continue
@@ -147,10 +144,11 @@ func doMain() (rc int) {
 		}
 
 		if count == 0 {
+			unusedExports[pkg] = es
 			continue
 		}
 		if count == len(es) {
-			unusedExports[pkg] = es
+			// all symbols being used
 			continue
 		}
 
@@ -172,6 +170,10 @@ func doMain() (rc int) {
 	// Print results if verbose or lint mode is enabled
 	// If lint mode is enabled, stop processing here
 	if verbose || *lintOnly {
+		if len(unusedExports) > 0 {
+			fmt.Println("Unused exports")
+		}
+
 		for pkg, es := range unusedExports {
 			fmt.Println("package: ", pkg.Pkg.Name())
 			for _, e := range es {
@@ -206,7 +208,10 @@ func doMain() (rc int) {
 			files, err := r.Update(e.objs...)
 			if err != nil {
 				fmt.Fprintln(os.Stderr, "renaming failed with: ", err)
-				return 1
+				if !(*ignoreConflicts) {
+					return 1
+				}
+				fmt.Fprintln(os.Stderr, "ignore renaming conflict")
 			}
 
 			for file := range files {
