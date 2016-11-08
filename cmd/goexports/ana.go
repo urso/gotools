@@ -13,10 +13,11 @@ import (
 func collectExports(
 	prog *loader.Program,
 	files []filespec.FileInfo,
+	filter func(string) bool,
 ) map[*loader.PackageInfo][]exports {
 	pkgs := map[*loader.PackageInfo][]exports{}
 	for _, file := range files {
-		results := collectFileExports(prog, file)
+		results := collectFileExports(prog, file, filter)
 		if len(results) == 0 {
 			continue
 		}
@@ -29,6 +30,7 @@ func collectExports(
 func collectFileExports(
 	prog *loader.Program,
 	file filespec.FileInfo,
+	filter func(string) bool,
 ) []exports {
 	var es []exports
 
@@ -37,6 +39,10 @@ func collectFileExports(
 	ast.Walk(makeExportsVisitor(func(id *ast.Ident, n ast.Node) {
 		fn, isFunc := n.(*ast.FuncDecl)
 		if isTest && isTestName(id.Name) && isFunc && fn.Recv == nil {
+			return
+		}
+
+		if filter != nil && !filter(id.Name) {
 			return
 		}
 

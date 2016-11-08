@@ -52,6 +52,7 @@ func doMain() (rc int) {
 	lintOnly := flag.Bool("l", false, "Lint mode")
 	ignoreConflicts := flag.Bool("c", false, "ignore conflicts (do not rename)")
 	verboseLogging := flag.Bool("v", false, "verbose")
+	filter := registerFilterFlag("i", "e", " names regular expression")
 
 	flag.Usage = usage
 	flag.Parse()
@@ -100,7 +101,7 @@ func doMain() (rc int) {
 
 	// collect exported symbols
 	files := spec.CollectFiles(prog)
-	allExported := collectExports(prog, files)
+	allExported := collectExports(prog, files, filter.report)
 	if len(allExported) == 0 {
 		fmt.Println("no exports found")
 		return
