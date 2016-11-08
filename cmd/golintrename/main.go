@@ -186,6 +186,7 @@ func doMain() int {
 
 				files, err := r.Update(objs...)
 				if err != nil {
+					fmt.Fprintln(os.Stderr, "renaming failed with: ", err)
 					return 1
 				}
 				for file := range files {

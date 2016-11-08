@@ -15,7 +15,7 @@ import (
 // errorf reports an error (e.g. conflict) and prevents file modification.
 func (r *Renamer) errorf(pos token.Pos, format string, args ...interface{}) {
 	r.hadConflicts = true
-	reportError(r.iprog.Fset.Position(pos), fmt.Sprintf(format, args...))
+	ReportError(r.iprog.Fset.Position(pos), fmt.Sprintf(format, args...))
 }
 
 // check performs safety checks of the renaming of the 'from' object to r.to.

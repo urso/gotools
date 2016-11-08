@@ -25,7 +25,7 @@ type Renamer struct {
 	changeMethods      bool
 }
 
-var reportError = func(posn token.Position, message string) {
+var ReportError = func(posn token.Position, message string) {
 	fmt.Fprintf(os.Stderr, "%s: %s\n", posn, message)
 }
 
