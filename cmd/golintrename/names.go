@@ -4,6 +4,8 @@ import (
 	"regexp"
 	"strings"
 	"unicode"
+
+	"github.com/urso/gotools/names"
 )
 
 var allCapsRE = regexp.MustCompile(`^[A-Z0-9_]+$`)
@@ -12,7 +14,7 @@ func isAllCaps(name string) bool {
 	return len(name) >= 5 && allCapsRE.MatchString(name) && strings.Contains(name, "_")
 }
 
-func lintName(name string, initialisms map[string]bool) (should string) {
+func lintName(name string, initialisms *names.Initials) (should string) {
 	if name == "_" {
 		return name
 	}
@@ -24,7 +26,7 @@ func lintName(name string, initialisms map[string]bool) (should string) {
 }
 
 // lintName returns a different name if it should be different.
-func doLintName(name string, initialisms map[string]bool) (should string) {
+func doLintName(name string, initialisms *names.Initials) (should string) {
 	// Fast path for simple cases: "_" and all lowercase.
 	if name == "_" {
 		return name
@@ -74,7 +76,7 @@ func doLintName(name string, initialisms map[string]bool) (should string) {
 
 		// [w,i) is a word.
 		word := string(runes[w:i])
-		if u := strings.ToUpper(word); commonInitialisms[u] || initialisms[u] {
+		if u := strings.ToUpper(word); initialisms.Has(u) {
 			// Keep consistent case, which is lowercase only at the start.
 			if w == 0 && unicode.IsLower(runes[w]) {
 				u = strings.ToLower(u)
@@ -89,54 +91,4 @@ func doLintName(name string, initialisms map[string]bool) (should string) {
 		w = i
 	}
 	return string(runes)
-}
-
-var commonInitialisms = map[string]bool{
-	"ACL":   true,
-	"API":   true,
-	"ASCII": true,
-	"CPU":   true,
-	"CSS":   true,
-	"DNS":   true,
-	"EOF":   true,
-	"GUID":  true,
-	"HTML":  true,
-	"HTTP":  true,
-	"HTTPS": true,
-	"ID":    true,
-	"IP":    true,
-	"JSON":  true,
-	"LHS":   true,
-	"QPS":   true,
-	"RAM":   true,
-	"RHS":   true,
-	"RPC":   true,
-	"SLA":   true,
-	"SMTP":  true,
-	"SQL":   true,
-	"SSH":   true,
-	"TCP":   true,
-	"TLS":   true,
-	"TTL":   true,
-	"UDP":   true,
-	"UI":    true,
-	"UID":   true,
-	"UUID":  true,
-	"URI":   true,
-	"URL":   true,
-	"UTF8":  true,
-	"VM":    true,
-	"XML":   true,
-	"XMPP":  true,
-	"XSRF":  true,
-	"XSS":   true,
-}
-
-func isTestName(t string) bool {
-	for _, prefix := range []string{"Example", "Test", "Benchmark"} {
-		if strings.HasPrefix(t, prefix) {
-			return true
-		}
-	}
-	return false
 }

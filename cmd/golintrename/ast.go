@@ -3,6 +3,8 @@ package main
 import (
 	"go/ast"
 	"go/token"
+
+	"github.com/urso/gotools/names"
 )
 
 // walker adapts a function to satisfy the ast.Visitor interface.
@@ -52,7 +54,7 @@ func iterNameDecls(isTest bool, f *ast.File, check func(id *ast.Ident, thing str
 
 		case *ast.FuncDecl:
 			name := v.Name.Name
-			if isTest && isTestName(name) {
+			if isTest && names.IsTestName(name) {
 				return
 			}
 

@@ -14,6 +14,7 @@ import (
 
 	"github.com/urso/gotools/ana"
 	"github.com/urso/gotools/filespec"
+	"github.com/urso/gotools/names"
 	"github.com/urso/gotools/renamer"
 	"github.com/urso/gotools/write"
 
@@ -89,10 +90,7 @@ func doMain() int {
 	}
 
 	// analyze all given files for naming errors
-	initialisms := map[string]bool{}
-	for _, s := range strings.Split(*initials, ",") {
-		initialisms[strings.ToUpper(strings.TrimSpace(s))] = true
-	}
+	initialisms := names.NewInitials(*initials)
 	files := spec.CollectFiles(prog)
 	names := analyzeAllNames(fset, files, initialisms)
 
@@ -247,7 +245,7 @@ func requiresGlobal(names map[string]map[string][]correction) bool {
 func analyzeAllNames(
 	fset *token.FileSet,
 	files []filespec.FileInfo,
-	initialisms map[string]bool,
+	initialisms *names.Initials,
 ) map[string]map[string][]correction {
 	pkgs := map[string]map[string][]correction{}
 	for _, file := range files {
@@ -271,7 +269,7 @@ func analyzeAllNames(
 func analyzeNames(
 	fset *token.FileSet,
 	file filespec.FileInfo,
-	initialisms map[string]bool,
+	initialisms *names.Initials,
 ) []correction {
 	path := file.Path
 	isTest := strings.HasSuffix(path, "_test.go")
