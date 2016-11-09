@@ -11,6 +11,7 @@ import (
 	"go/types"
 	"log"
 	"os"
+	"strings"
 	"unicode"
 	"unicode/utf8"
 
@@ -18,6 +19,7 @@ import (
 	"golang.org/x/tools/refactor/importgraph"
 
 	"github.com/urso/gotools/filespec"
+	"github.com/urso/gotools/names"
 	"github.com/urso/gotools/renamer"
 	"github.com/urso/gotools/write"
 )
@@ -52,6 +54,7 @@ func doMain() (rc int) {
 	lintOnly := flag.Bool("l", false, "Lint mode")
 	ignoreConflicts := flag.Bool("c", false, "ignore conflicts (do not rename)")
 	verboseLogging := flag.Bool("v", false, "verbose")
+	initials := flag.String("initials", "", "Name Initialisms")
 	filter := registerFilterFlag("i", "e", " names regular expression")
 
 	flag.Usage = usage
@@ -196,6 +199,7 @@ func doMain() (rc int) {
 		fmt.Println("try renaming unused exports")
 	}
 
+	initialisms := names.NewInitials(*initials)
 	updatedFiles := map[*token.File]bool{}
 	for pkg, es := range unusedExports {
 		if verbose {
@@ -203,7 +207,7 @@ func doMain() (rc int) {
 		}
 
 		for _, e := range es {
-			r := renamer.New(prog, unexportedName(e.ident.Name))
+			r := renamer.New(prog, unexportedName(e.ident.Name, initialisms))
 			r.AddAllPackages(prog.InitialPackages()...)
 
 			files, err := r.Update(e.objs...)
@@ -262,9 +266,13 @@ func doMain() (rc int) {
 	return
 }
 
-func unexportedName(n string) string {
+func unexportedName(n string, initialisms *names.Initials) string {
 	if n == "" {
 		return ""
+	}
+
+	if i := initialisms.StartsWith(n); i != "" {
+		return strings.ToLower(i) + n[len(i):]
 	}
 
 	r, _ := utf8.DecodeRuneInString(n)
