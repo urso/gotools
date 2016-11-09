@@ -48,9 +48,15 @@ var CommonInitialisms = map[string]bool{
 }
 
 func Parse(in string) map[string]bool {
+	if in == "" {
+		return nil
+	}
+
 	is := map[string]bool{}
 	for _, s := range strings.Split(in, ",") {
-		is[strings.ToUpper(strings.TrimSpace(s))] = true
+		if s != "" {
+			is[strings.ToUpper(strings.TrimSpace(s))] = true
+		}
 	}
 	return is
 }
@@ -80,11 +86,10 @@ func (i *Initials) StartsWith(name string) string {
 	name = strings.ToUpper(name)
 	for _, m := range i.initials {
 		for key, v := range m {
-			if !v {
-				return ""
-			}
-
-			if strings.HasSuffix(name, key) {
+			if strings.HasPrefix(name, key) {
+				if !v {
+					return ""
+				}
 				return key
 			}
 		}
